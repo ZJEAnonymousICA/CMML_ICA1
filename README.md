@@ -2,11 +2,9 @@
   <img src="./assets/ZJE_logo.png" alt="ZJU-UoE Institute logo" width="780">
 </p>
 
-<h1 align="center">CMML3 ICA1: Improved Workshop's Model and BR Implementation </h1>
+---
 
-<p align="center">
-  Reviewer-facing reproduction package (WBM vs SIM).
-</p>
+<h1 align="center">CMML3 ICA1: Improved Workshop's Model and BR Implementation </h1>
 
 <p align="center">
   <img src="https://img.shields.io/badge/Python-3.x-3776AB?logo=python&logoColor=white" alt="Python badge">
