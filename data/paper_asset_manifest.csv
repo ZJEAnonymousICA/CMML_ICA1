@@ -1,0 +1,8 @@
+paper_asset,scripts_to_run,primary_outputs
+Main Figure 1,02_run_sim_full_analysis.py,data/*.csv (SIM panel datasets) ; figures/Figure1.pdf (final assembled figure)
+Main Figure 2,02_run_sim_full_analysis.py,data/*.csv (SIM mechanism datasets) ; figures/Figure2.pdf (final assembled figure)
+Workshop benchmark (Fig. S1),01_run_workshop_benchmark.py,data/workshop_scaffold_benchmark_timecourse.csv
+Supplementary Figure 2,(precomputed only),(see submitted Supporting Materials PDF)
+Supplementary Figure 3,02_run_sim_full_analysis.py,data/br4_compare_multi_diam.csv ; data/rule_compare_runs.csv ; data/rule_compare_summary.csv
+Supplementary Figure 4,02_run_sim_full_analysis.py,data/alpha_plateau_summary.csv ; data/sweep_summary.csv ; data/sweep_branch_collapse_pct.csv ; data/sweep_regression.csv ; data/review_br5_runs.csv
+Table S1 (CSV),03_export_review_tables.py,data/table_s1_scaffold_expansions.csv

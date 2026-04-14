@@ -1,0 +1,8 @@
+item,updated_model,value_or_setting,interpretation
+Core ABM retained,"Improved BR1-BR5 scaffold, convergent endpoint, and flow solver",unchanged,The current ICA model changes polarity while keeping the improved scientific scaffold
+Polarity update,"Weighted sum of persistence, flow, neighbour, and random terms","w1=0.30, w2=0.30, w3=0.10, w4=0.30",Main-text model mirrors the workshop-style polarity heuristic
+Other ABM elements,"Geometry, Kirchhoff solve, BR1-BR5 migration, recycling, intercalation, endpoint",unchanged,Preserves the original bifurcation-rule semantics while changing only polarity
+BR3 benchmark,Topology preserved / joint success (100 seeds),95/100; 48/100,Random choice still keeps branches open more easily than it builds hierarchy
+BR4 benchmark,Topology preserved / joint success (100 seeds),90/100; 90/100,Strong performer under the richer polarity law
+BR5 benchmark,Topology preserved / joint success at alpha=0.45 (100 seeds),85/100; 77/100,BR5 remains mechanistically successful but is no longer unique
+BR5 fine sweep,Peak alpha / plateau / peak joint success,"0.47; [0.11, 0.53]; 76.0%",Intermediate BR5 regime persists under mixed polarity

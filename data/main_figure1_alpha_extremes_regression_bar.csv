@@ -1,0 +1,5 @@
+alpha,alpha_label,branch,n_branch_loss,n_total,loss_pct
+0.0,alpha = 0.00,Proximal-first loss,9,60,15.0
+0.0,alpha = 0.00,Distal-first loss,8,60,13.333333333333334
+1.0,alpha = 1.00,Proximal-first loss,6,60,10.0
+1.0,alpha = 1.00,Distal-first loss,30,60,50.0

@@ -1,0 +1,2 @@
+metric,rule_a,rule_b,n_a,n_b,success_a,success_b,risk_diff_pct,odds_ratio,p_value
+Joint success,BR5,BR3,100,100,77,48,29.0,3.627,3.7043597180825526e-05

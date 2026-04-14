@@ -1,0 +1,10 @@
+rule,metric,n_success,n_total,pct,ci_lo,ci_hi
+BR3,Topology preserved,95,100,95.0,88.82,97.85
+BR3,Hierarchy among survivors,48,95,50.53,40.65,60.36
+BR3,Joint success,48,100,48.0,38.46,57.68
+BR4,Topology preserved,90,100,90.0,82.56,94.48
+BR4,Hierarchy among survivors,90,90,100.0,95.91,100.0
+BR4,Joint success,90,100,90.0,82.56,94.48
+BR5,Topology preserved,85,100,85.0,76.72,90.69
+BR5,Hierarchy among survivors,77,85,90.59,82.51,95.15
+BR5,Joint success,77,100,77.0,67.85,84.16

@@ -1,0 +1,2 @@
+peak_alpha,peak_joint_success_pct,threshold_pct,plateau_alpha_lo,plateau_alpha_hi,grid_step,definition
+0.47,76.0,61.0,0.11,0.53,0.01,contiguous alphas around the maximum within 15 percentage points of peak joint success

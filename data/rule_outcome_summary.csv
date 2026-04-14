@@ -1,0 +1,4 @@
+rule,n_total,topology_preserved_n,topology_preserved_pct,joint_success_n,joint_success_pct,mean_final_prox_um,mean_final_dist_um
+BR3,100,95,95.0,48,48.0,9.772,9.871
+BR4,100,90,90.0,90,90.0,15.637,7.068
+BR5,100,85,85.0,77,77.0,16.391,4.227

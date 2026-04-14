@@ -1,0 +1,3 @@
+metric,x,y,label
+Joint success,3.0,92.16,Fisher exact p = 3.70e-05
+Hierarchy among survivors,2.0,103.15,among stable seeds only
