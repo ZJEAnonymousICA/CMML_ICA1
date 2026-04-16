@@ -9,6 +9,7 @@ import numpy as np
 def realign_polarity(seg, Q, seg_cells, realigned_cells, w1, w2, w3, w4):
 
     if seg_cells[seg]['num'] != 0:
+        # Only occupied segments contribute polarity information.
         
         # Calculate average polarity of the segment (Neighbor Alignment)
         neigh_dir = np.array([0., 0.])
@@ -42,6 +43,8 @@ def realign_polarity(seg, Q, seg_cells, realigned_cells, w1, w2, w3, w4):
                 flow_dir = -flow_dir
                 
             # 3. Random Walk
+            # The random term injects exploratory movement into the otherwise
+            # deterministic weighted sum.
             rand_dir = np.random.randn(2)
             norm_rand = np.linalg.norm(rand_dir)
             if norm_rand > 0:
@@ -55,6 +58,7 @@ def realign_polarity(seg, Q, seg_cells, realigned_cells, w1, w2, w3, w4):
             if norm_new > 0:
                 new_pol /= norm_new
             else:
+                # If the weighted sum cancels out, keep the existing direction.
                 new_pol = old_pol
             
             # Update realigned_cells structure

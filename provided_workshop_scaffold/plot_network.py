@@ -18,6 +18,7 @@ def plot_network(segments, D, P, Q, seg_cells, tau=None):
     plt.title('Network: Q [blue, pL/s] / Tau [red, Pa]')
     
     def plot_seg(seg_idx, pt1, pt2):
+        # Color encodes the sign of the solved flow rate for this segment.
         if Q[seg_idx] > 0:
             color = "red"  # Flow is positive
         else:
@@ -48,6 +49,7 @@ def plot_network(segments, D, P, Q, seg_cells, tau=None):
             mid_y = (pt1[1] + pt2[1]) / 2
             
             # Format numbers
+            # Flow is converted from SI units into pL/s for readability.
             q_val = Q[seg_idx] * 1e12 # Convert to pL/s
             tau_val = tau[seg_idx] if tau is not None else 0
             
@@ -88,6 +90,7 @@ def plot_network(segments, D, P, Q, seg_cells, tau=None):
     for seg in range(len(seg_cells)):
         if seg_cells[seg]['num'] > 0:
             for cell in range(seg_cells[seg]['num']):
+                # Each line shows one cell's polarity as a vector from the origin.
                 polarity = seg_cells[seg]['polarity'][cell]
                 plt.plot([0, polarity[0]], [0, polarity[1]], 'b-', alpha=0.1)
     

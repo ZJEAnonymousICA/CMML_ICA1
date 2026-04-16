@@ -15,6 +15,7 @@ def make_segments(L):
     # Seg 0-4: Inlet (Vertical Up)
     vessel1 = np.zeros((6, 2))
     for i in range(5):
+        # Coordinates are accumulated in micrometres for plotting convenience.
         vessel1[i+1] = vessel1[i] + v_up * L[i] * 1e6
 
     # Seg 5-14: Lower Channel (Horizontal Right)
@@ -57,6 +58,8 @@ def make_segments(L):
     pts_upper = np.vstack((vessel4, vessel5[1:], vessel6[1:]))
 
     # Final merge
+    # The scaffold plotting code expects one stacked array containing lower-path
+    # points first and then upper-path points.
     segments = np.vstack((pts_lower, pts_upper))
 
     return segments

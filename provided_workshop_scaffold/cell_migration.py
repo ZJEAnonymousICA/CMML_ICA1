@@ -32,11 +32,13 @@ def cell_migration(seg_cells, migrate, Q, branch_rule, branch_alpha, tau, cell_s
     new_seg_cells = [{'num': 0, 'polarity': [], 'migration': []} for _ in range(Nseg)]
     
     # Probability of migration event (can be tuned)
+    # In this scaffold rewrite, most cells do not attempt to move on a given step.
     mchance = 0.01
     
     # === 1. Define Topology / Routing Table ===
     # Helper to find neighbors
     def get_downstream_candidates(current_seg):
+        # Downstream follows the imposed vessel orientation used throughout the scaffold.
         # Specific Bifurcation Logic
         if current_seg == 4: return [5, 20]     # Bifurcation: Lower(5), Upper(20)
         if current_seg == 14: return [15]       # Lower Reunion
@@ -53,6 +55,7 @@ def cell_migration(seg_cells, migrate, Q, branch_rule, branch_alpha, tau, cell_s
         return []
 
     def get_upstream_candidates(current_seg):
+        # Upstream reverses those same topological connections.
         # Specific Logic
         if current_seg == 5: return [4]         # From Lower back to Main
         if current_seg == 20: return [4]        # From Upper back to Main
@@ -117,6 +120,8 @@ def cell_migration(seg_cells, migrate, Q, branch_rule, branch_alpha, tau, cell_s
                     target_seg = candidates[0]
                 elif len(candidates) > 1:
                     # Bifurcation Decision (Node 5 -> 5 or 20)
+                    # The scaffold exposes several simple routing heuristics
+                    # that choose between the lower and upper branches.
                     prob_lower = 0.5 # Default Rule 1: Random
 
                     # Identify indices for lower vs upper branch start

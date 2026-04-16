@@ -14,6 +14,8 @@ Reference: Edgar et al. (2021), PLoS Comput Biol.
 import numpy as np
 
 # --- Constants ---
+# Segment and node counts are shared across the entire updated model, so this
+# module acts as the single source of truth for the network layout.
 NSEG = 40
 NNODE = 40  # 21 lower-path nodes + 19 upper-path nodes (nodes 5 and 15 shared)
 
@@ -35,6 +37,8 @@ NODE_CONVERGENCE = 15  # flow-convergent (right side)
 
 def get_vessel_axis(seg):
     """Return the geometric direction vector for a segment."""
+    # Each contiguous straight run in the A-branch network has a fixed axis, so
+    # segment identity alone is enough to determine its local coordinate frame.
     if seg in FEEDING or seg in DISTAL_UP:
         return np.array([0.0, 1.0])   # up
     elif seg in PROXIMAL or seg in DISTAL_HOR:
@@ -52,6 +56,8 @@ def get_seg_nodes(seg):
 
     Convention: Q > 0 means flow from upstream_node to downstream_node.
     """
+    # The lower path uses consecutive node numbering, while the upper path is
+    # spliced onto shared bifurcation/convergence nodes.
     if 0 <= seg <= 19:
         # Lower path: seg i connects node i to node i+1
         return (seg, seg + 1)
@@ -84,6 +90,7 @@ def get_downstream_target(seg):
         # End of distal branch: enters convergence → draining
         return [15]
     # Default: next segment
+    # Outside junctions, downstream movement is just "advance one segment".
     if 0 <= seg <= 18:
         return [seg + 1]
     if 20 <= seg <= 38:
@@ -110,6 +117,7 @@ def get_upstream_target(seg):
         # Start of draining: cell at convergence can go to proximal (seg 14) or distal (seg 39)
         return [14, 39]
     # Default: previous segment
+    # Outside junctions, upstream movement is just "step to the previous segment".
     if 1 <= seg <= 19:
         return [seg - 1]
     if 21 <= seg <= 39:
@@ -119,6 +127,8 @@ def get_upstream_target(seg):
 
 def get_rotation_angle_downstream(seg, target):
     """Return polarity rotation angle (degrees) for a cell moving downstream from seg to target."""
+    # These hard-coded turns encode the actual corners in the network so a
+    # cell's polarity can stay consistent with its new segment orientation.
     # Horizontal → Vertical down (right-angle turn)
     if seg == 14 and target == 15:
         return -90.0
@@ -143,6 +153,8 @@ def get_rotation_angle_downstream(seg, target):
 
 def get_rotation_angle_upstream(seg, target):
     """Return polarity rotation angle (degrees) for a cell moving upstream from seg to target."""
+    # The upstream mapping is not simply the negative of the downstream mapping,
+    # because the same junction can imply different geometric continuations.
     # Horizontal left ← Vertical down (right-angle turn)
     if seg == 15 and target == 14:
         return 90.0
@@ -169,12 +181,15 @@ def rotate_polarity(polar_vect, angle_deg):
     """Apply a 2D rotation to a polarity vector."""
     if angle_deg == 0.0:
         return polar_vect
+    # A standard 2D rotation matrix is enough because polarity lives in the
+    # plane of the schematic vessel network.
     theta = np.radians(angle_deg)
     c, s = np.cos(theta), np.sin(theta)
     R = np.array([[c, -s], [s, c]])
     rotated = R @ polar_vect
     norm = np.linalg.norm(rotated)
     if norm > 0:
+        # Renormalization removes any accumulated floating-point drift.
         rotated /= norm
     return rotated
 
@@ -190,6 +205,8 @@ def make_segment_coords(L):
                   lower: (21, 2) array for nodes 0-20
                   upper: (20, 2) array for nodes 5, 21-39
     """
+    # Geometry is stored in micrometres because the coordinates are used
+    # primarily for plotting rather than for physical calculations.
     L_um = L * 1e6  # convert to micrometres for plotting
 
     v_up = np.array([0, 1])
@@ -200,6 +217,8 @@ def make_segment_coords(L):
     lower = np.zeros((21, 2))
     # Feeding vessel (seg 0-4): 5 segments going up
     for i in range(5):
+        # Each node is constructed cumulatively from the previous node plus one
+        # segment-length step in the appropriate direction.
         lower[i+1] = lower[i] + v_up * L_um[i]
     # Proximal branch (seg 5-14): 10 segments going right
     for i in range(10):

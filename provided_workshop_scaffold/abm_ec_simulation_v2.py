@@ -38,6 +38,7 @@ w4 = 0.30  # Random re-alignment weight
 w1 = 1 - w2 - w3 - w4  # Persistence component
 
 # Initialize segment properties
+# The scaffold starts from a uniform vessel and uniform cell occupancy.
 L = np.ones(Nseg) * 10e-6  # Segment lengths (m)
 Ncell = np.ones(Nseg) * num_cell  # Segment cell number array
 D = np.zeros(Nseg)  # Segment diameters (m)
@@ -49,6 +50,8 @@ segments = make_segments(L)  # Generate segment structure
 
 # Initialize segment cell structures
 def initialize_segments(Nseg, num_cell):
+    # Each segment stores its own occupancy, a list of cell polarity vectors,
+    # and a migration flag array used during each step.
     seg_cells = [{} for _ in range(Nseg)]
     for seg in range(Nseg):
         seg_cells[seg]['num'] = int(num_cell)  # Number of cells
@@ -64,6 +67,8 @@ print("Property of the segment 0:", seg_cells[0]) # To be honest, you shoud use 
 
 # Compute initial segment conductance and shear stress
 def compute_conductance(Nseg, Ncell, cell_size, mu, L):
+    # Convert cell occupancy into an effective diameter and then into the flow
+    # coefficients needed by the haemodynamic solve.
     D = np.zeros(Nseg)
     G = np.zeros(Nseg)
     H = np.zeros(Nseg)
@@ -79,6 +84,8 @@ def compute_conductance(Nseg, Ncell, cell_size, mu, L):
         else:
             D[seg] = calculated_D
             
+        # Poiseuille conductance scales with diameter^4, so small calibre
+        # changes strongly affect the solved flow distribution.
         G[seg] = (np.pi * D[seg]**4) / (128 * mu * L[seg])
         H[seg] = (32 * mu) / (np.pi * D[seg]**3)
     return D, G, H
@@ -98,6 +105,8 @@ for t in range(Nt):
     new_seg_cells = [entry.copy() for entry in seg_cells] # Deep copy might be safer here
     
     # 1. Realign Polarity (rotate in origin)
+    # Realignment is staged into a separate structure so cells respond to the
+    # same pre-migration state within each step.
     realigned_cells = [d.copy() for d in seg_cells] # Shallow copies of dicts
     # Deep copy the lists inside
     for i in range(len(seg_cells)):
@@ -108,6 +117,7 @@ for t in range(Nt):
         realign_polarity(seg, Q, seg_cells, realigned_cells, w1, w2, w3, w4)
     
     # 2. Cell Migration
+    # Migration consumes the freshly realigned polarity vectors.
     final_cells = cell_migration(realigned_cells, migrate, Q, branch_rule, branch_alpha, tau)
     
     # 3. Update State
@@ -124,5 +134,6 @@ for t in range(Nt):
     P, Q, tau = solve_for_flow(G, Pin, Pout, H)
     
     # Plot only every 20 time steps
+    # Sparse plotting keeps the interactive run manageable.
     if (t + 1) % 20 == 0:
         plot_network(segments, D, P, Q, seg_cells, tau)

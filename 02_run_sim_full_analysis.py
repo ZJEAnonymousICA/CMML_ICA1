@@ -13,6 +13,8 @@ os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
 os.environ.setdefault("MKL_NUM_THREADS", "1")
 os.environ.setdefault("VECLIB_MAXIMUM_THREADS", "1")
 
+# Force the script to run relative to its own directory so all CSV outputs land
+# in the expected `data/` folder no matter where the user invokes it from.
 BASE_DIR = os.path.dirname(__file__)
 os.chdir(BASE_DIR)
 
@@ -24,6 +26,8 @@ _flow = _il.import_module("haemodynamics")
 _sim = _il.import_module("simulation_updated_model")
 _ana = _il.import_module("analysis_updated_model")
 
+# Re-export the key model helpers under local names to keep the long analysis
+# script readable without repeated module-qualified lookups.
 NSEG = _net.NSEG
 NNODE = _net.NNODE
 run_simulation = _sim.run_simulation
@@ -62,17 +66,21 @@ DT_DAYS = DEFAULT_PARAMS["dt_hours"] / 24.0
 
 
 def ensure_dirs() -> None:
+    # All downstream writers assume these directories already exist.
     os.makedirs(DATA_DIR, exist_ok=True)
     os.makedirs(FIG_DIR, exist_ok=True)
 
 
 def _pool_factory(n_workers: int):
+    # Match the multiprocessing policy used elsewhere in the repo.
     if "fork" in get_all_start_methods():
         return get_context("fork").Pool(processes=n_workers)
     return Pool(processes=n_workers)
 
 
 def export_segment_coords() -> None:
+    # Export a plotting-friendly geometry table so figure assembly can happen in
+    # R or other tools without reimplementing the network layout logic.
     lengths = np.ones(NSEG) * DEFAULT_PARAMS["l_seg"]
     raw = _net.make_segment_coords(lengths)
     lower = raw["lower"]
@@ -112,6 +120,8 @@ def export_segment_coords() -> None:
 
 
 def export_result_timeseries(result: dict, prefix: str) -> None:
+    # This helper writes both branch-mean summaries and selected segment-level
+    # snapshots for a single representative simulation run.
     n_steps = result["Ncell"].shape[0]
     time_days = result["time_days"]
 
@@ -127,6 +137,7 @@ def export_result_timeseries(result: dict, prefix: str) -> None:
 
     rows = []
     for t_idx in [0, n_steps - 1]:
+        # Only the initial and final segment snapshots are needed for the paper figures.
         for seg in range(NSEG):
             rows.append({
                 "step": t_idx,
@@ -141,6 +152,8 @@ def export_result_timeseries(result: dict, prefix: str) -> None:
 
 
 def export_multiseed_diameters(results_list: list[dict], prefix: str) -> None:
+    # Flatten many simulation histories into one long table for line plots with
+    # seed-wise trajectories or ribbons.
     rows = []
     for seed_idx, result in enumerate(results_list):
         for step, time_days in enumerate(result["time_days"]):
@@ -160,6 +173,8 @@ def export_multiseed_diameters(results_list: list[dict], prefix: str) -> None:
 def export_prob_history(result: dict, prefix: str) -> None:
     if "prob_history" not in result or result["prob_history"] is None:
         return
+    # BR5 probability histories are saved step-by-step so the emergence of
+    # one-sided routing can be plotted directly.
     rows = []
     for step, probs in enumerate(result["prob_history"]):
         rows.append({
@@ -175,6 +190,8 @@ def export_prob_history(result: dict, prefix: str) -> None:
 
 
 def export_pressure_cellcount(result: dict, prefix: str) -> None:
+    # This export tracks the haemodynamic pressure drop against branch occupancy
+    # to connect flow cues with cell redistribution over time.
     rows = []
     for step, time_days in enumerate(result["time_days"]):
         rows.append({
@@ -191,6 +208,8 @@ def export_pressure_cellcount(result: dict, prefix: str) -> None:
 
 
 def export_conductance_data(result: dict, prefix: str) -> None:
+    # Recompute conductance from stored cell counts at a few representative time
+    # points rather than storing yet another full history in every run.
     rows = []
     n_steps = result["Ncell"].shape[0] - 1
     for t_idx in [0, n_steps // 3, 2 * n_steps // 3, n_steps]:
@@ -214,6 +233,8 @@ def export_conductance_data(result: dict, prefix: str) -> None:
 
 
 def fisher_exact_twosided(a: int, b: int, c: int, d: int):
+    # The counts correspond to a 2x2 contingency table:
+    # [[success_a, failure_a], [success_b, failure_b]].
     row1 = a + b
     row2 = c + d
     col1 = a + c
@@ -223,6 +244,8 @@ def fisher_exact_twosided(a: int, b: int, c: int, d: int):
     hi = min(row1, col1)
 
     def prob(x):
+        # Enumerate the hypergeometric probability of each feasible table with
+        # the same margins as the observed one.
         return (
             math.comb(col1, x)
             * math.comb(total - col1, row1 - x)
@@ -245,6 +268,7 @@ def fisher_exact_twosided(a: int, b: int, c: int, d: int):
 
 
 def results_to_seed_df(results: list[dict], rule: str, alpha: float | None = None) -> pd.DataFrame:
+    # Convert a list of per-seed result dictionaries into a tidy one-row-per-seed table.
     rows = []
     for seed_idx, result in enumerate(results):
         rows.append({
@@ -263,6 +287,8 @@ def results_to_seed_df(results: list[dict], rule: str, alpha: float | None = Non
 
 
 def summarise_rule(seed_df: pd.DataFrame, rule: str) -> list[dict]:
+    # Report three outcomes separately because the paper distinguishes topology
+    # preservation, hierarchy conditional on survival, and their joint success.
     sub = seed_df.loc[seed_df["rule"] == rule].copy()
     n_total = len(sub)
     n_stable = int(sub["stable"].sum())
@@ -310,6 +336,7 @@ def summarise_rule(seed_df: pd.DataFrame, rule: str) -> list[dict]:
 
 
 def sweep_to_runs_df(sweep: dict, rule_label: str) -> pd.DataFrame:
+    # Expand the alpha-sweep tensors into a long-form run table for grouped summaries.
     rows = []
     alpha_values = sweep["alpha_values"]
     seeds = sweep["seeds"]
@@ -333,6 +360,8 @@ def sweep_to_runs_df(sweep: dict, rule_label: str) -> pd.DataFrame:
 
 
 def summarise_runs(df: pd.DataFrame) -> pd.DataFrame:
+    # Summaries are computed alpha-by-alpha because each alpha defines a distinct
+    # mechanistic balance between shear and occupancy cues.
     rows = []
     for alpha, grp in df.groupby("alpha", sort=True):
         n = len(grp)
@@ -345,6 +374,7 @@ def summarise_runs(df: pd.DataFrame) -> pd.DataFrame:
             100.0 * grp.loc[grp["stable"] == 1, "hierarchy_success"].mean()
             if n_stable > 0 else np.nan
         )
+        # Wilson intervals are used consistently across the analysis outputs.
         loss_pct, loss_lo, loss_hi = wilson_ci(n_lost, n)
         collapse_pct, collapse_lo, collapse_hi = wilson_ci(n_collapsed, n)
         hier_pct, hier_lo, hier_hi = wilson_ci(n_hierarchy, n)
@@ -374,6 +404,8 @@ def summarise_runs(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def export_time_surface(sweep: dict, filename: str, field: str) -> None:
+    # Convert alpha x time matrices into long-form tables that contour/heatmap
+    # plotting code can consume directly.
     rows = []
     for i, alpha in enumerate(sweep["alpha_values"]):
         for step in range(sweep["Nt"] + 1):
@@ -387,6 +419,8 @@ def export_time_surface(sweep: dict, filename: str, field: str) -> None:
 
 
 def export_regression_breakdown(sweep: dict, filename: str) -> None:
+    # This helper isolates which branch fails at each alpha, collapsing the full
+    # seed-level tensor into one row per alpha.
     rows = []
     for i, alpha in enumerate(sweep["alpha_values"]):
         loss_time = sweep["loss_time"][i]
@@ -403,6 +437,8 @@ def export_regression_breakdown(sweep: dict, filename: str) -> None:
 
 
 def contiguous_peak_plateau(summary_df: pd.DataFrame):
+    # Identify the broad "good-enough" alpha window around the optimum rather
+    # than treating a single grid-point maximum as uniquely meaningful.
     summary_df = summary_df.sort_values("alpha").reset_index(drop=True)
     peak_idx = int(summary_df["joint_success_pct"].idxmax())
     peak_alpha = float(summary_df.loc[peak_idx, "alpha"])
@@ -426,6 +462,8 @@ def contiguous_peak_plateau(summary_df: pd.DataFrame):
 
 
 def first_sustained_true(mask: np.ndarray, sustain_steps: int) -> int:
+    # This compresses a noisy Boolean trace into the first time an effect stays
+    # present for `sustain_steps` consecutive steps.
     run = 0
     for idx, flag in enumerate(mask):
         run = run + 1 if flag else 0
@@ -436,6 +474,8 @@ def first_sustained_true(mask: np.ndarray, sustain_steps: int) -> int:
 
 def _run_bias_single(args):
     alpha, seed = args
+    # This worker records only the first loss event, which is enough for the
+    # topology-bias analysis and keeps the result payload small.
     result = run_simulation(branch_rule=5, alpha=float(alpha), seed=int(seed))
     loss_time = int(result["loss_time"])
     first_loss_branch = 0
@@ -453,6 +493,7 @@ def _run_bias_single(args):
 def _run_imbalance_single(args):
     alpha, seed = args
     result = run_simulation(branch_rule=5, alpha=float(alpha), seed=int(seed))
+    # Hierarchy onset is defined as a sustained diameter gap above a fixed threshold.
     delta = result["mean_diam_prox"] - result["mean_diam_dist"]
     mask = delta >= HIERARCHY_THRESHOLD_UM
     step = first_sustained_true(mask, SUSTAIN_STEPS)
@@ -474,6 +515,7 @@ def _run_runaway_single(args):
         record_probabilities=True,
     )
     probs = pd.DataFrame(result["prob_history"])
+    # One-sided routing corresponds to either branch probability dominating strongly.
     dominance = np.maximum(probs["P1"], probs["P2"])
     mask = dominance >= RUNAWAY_PROB_THRESHOLD
     step = first_sustained_true(mask.to_numpy(), SUSTAIN_STEPS)
@@ -496,6 +538,7 @@ def _run_runaway_single(args):
 
 
 def cumulative_curve(runs: pd.DataFrame, event_label: str) -> pd.DataFrame:
+    # Build a simple cumulative-incidence style curve from step-level event times.
     rows = []
     for alpha, grp in runs.groupby("alpha", sort=True):
         n = len(grp)
@@ -512,6 +555,8 @@ def cumulative_curve(runs: pd.DataFrame, event_label: str) -> pd.DataFrame:
 
 
 def kaplan_meier_curve(times, events, alpha):
+    # This implementation is intentionally explicit so the output table carries
+    # `n_at_risk` and `n_events` at each event time for plotting/inspection.
     times = pd.Series(times, dtype=int)
     events = pd.Series(events, dtype=int)
     unique_steps = sorted(times.loc[events == 1].unique())
@@ -529,6 +574,7 @@ def kaplan_meier_curve(times, events, alpha):
         d = int(((times == step) & (events == 1)).sum())
         c = int(((times == step) & (events == 0)).sum())
         if at_risk > 0:
+            # Standard Kaplan-Meier multiplicative survival update.
             surv *= (1.0 - d / at_risk)
         rows.append({
             "alpha": alpha,
@@ -552,6 +598,7 @@ def kaplan_meier_curve(times, events, alpha):
 
 
 def log_rank_test(df: pd.DataFrame, alpha_a: float, alpha_b: float):
+    # Compare two survival curves via the standard observed-vs-expected event count.
     sub = df.loc[df["alpha"].isin([alpha_a, alpha_b])].copy()
     event_steps = sorted(sub.loc[sub["event"] == 1, "step"].unique())
     observed_a = expected_a = variance_a = 0.0
@@ -576,6 +623,8 @@ def log_rank_test(df: pd.DataFrame, alpha_a: float, alpha_b: float):
 
 def run_matched_rule_comparison() -> pd.DataFrame:
     print(f"Running matched updated-model comparison ({N_COMPARE} seeds per rule)...", flush=True)
+    # The same master seed is used across rules so differences arise from the
+    # branch-choice rule, not from unmatched random seed sets.
     br3 = run_multiple_seeds(branch_rule=3, n_seeds=N_COMPARE, master_seed=COMPARE_MASTER_SEED)
     br4 = run_multiple_seeds(branch_rule=4, n_seeds=N_COMPARE, master_seed=COMPARE_MASTER_SEED)
     br5 = run_multiple_seeds(
@@ -607,6 +656,7 @@ def run_matched_rule_comparison() -> pd.DataFrame:
 
     br3_joint = int(seed_df.loc[seed_df["rule"] == "BR3", "joint_success"].sum())
     br5_joint = int(seed_df.loc[seed_df["rule"] == "BR5", "joint_success"].sum())
+    # Fisher's exact test is reserved for the headline BR3-vs-BR5 comparison.
     odds_ratio, p_value = fisher_exact_twosided(
         br5_joint, N_COMPARE - br5_joint, br3_joint, N_COMPARE - br3_joint
     )
@@ -673,6 +723,7 @@ def run_matched_rule_comparison() -> pd.DataFrame:
 
 def run_representative_traces() -> None:
     print("Running representative BR1 and BR5 traces for updated model...", flush=True)
+    # BR1 provides a deliberately simple comparator trace.
     br1 = run_simulation(branch_rule=1, seed=42)
     export_result_timeseries(br1, "br1")
 
@@ -688,6 +739,7 @@ def run_representative_traces() -> None:
             stable_result = result
             break
     if stable_result is None:
+        # Fall back to a deterministic seed so the script always emits outputs.
         stable_result = run_simulation(
             branch_rule=5,
             alpha=BR5_ALPHA,
@@ -737,6 +789,8 @@ def run_fine_br5_sweep() -> pd.DataFrame:
         if i % 10 == 0:
             print(f"  alpha {i + 1}/{n_alpha} ({alpha:.2f})", flush=True)
         for j, seed in enumerate(seeds):
+            # This sweep is intentionally serial: it is long-running but simpler
+            # to reason about and reproduce than a more aggressively parallel driver.
             result = run_simulation(branch_rule=5, alpha=float(alpha), seed=int(seed))
             loss_time[i, j] = int(result["loss_time"])
             loss_branch[i, j] = int(result["bifurcation_lost"][-1])
@@ -765,6 +819,7 @@ def run_fine_br5_sweep() -> pd.DataFrame:
     sweep["branch_collapse_pct"] = np.zeros((n_alpha, FINAL_STEP + 1))
     for i in range(n_alpha):
         for t in range(1, FINAL_STEP + 1):
+            # Convert exact event times into cumulative proportions by time.
             lost_by_t = np.sum((loss_time[i] > 0) & (loss_time[i] <= t))
             sweep["loss_pct"][i, t] = 100.0 * lost_by_t / n_seeds
             collapsed_by_t = np.sum(
@@ -781,6 +836,7 @@ def run_fine_br5_sweep() -> pd.DataFrame:
     export_regression_breakdown(sweep, "sweep_regression.csv")
 
     plateau, peak_alpha, peak_value, threshold, step = contiguous_peak_plateau(summary)
+    # Export the plateau as an explicit artifact so the review text can cite it directly.
     pd.DataFrame([{
         "peak_alpha": round(peak_alpha, 2),
         "peak_joint_success_pct": round(peak_value, 2),
@@ -840,6 +896,8 @@ def run_loss_topology_bias() -> pd.DataFrame:
         prox_share = 100.0 * n_prox / n_lost if n_lost > 0 else np.nan
         dist_share = 100.0 * n_dist / n_lost if n_lost > 0 else np.nan
 
+        # Report both absolute percentages over all runs and conditional shares
+        # among only the runs that actually lost a branch.
         summary_rows.append({
             "alpha": round(float(alpha), 2),
             "n_total": n,
@@ -893,6 +951,7 @@ def run_temporal_diagnostics() -> pd.DataFrame:
 
 
 def run_survival_from_bias(bias_runs: pd.DataFrame) -> None:
+    # Reinterpret stable runs as right-censored at the final simulated step.
     runs = bias_runs.loc[bias_runs["alpha"].isin(SELECTED_ALPHAS)].copy()
     runs["step"] = runs["loss_time"].where(runs["loss_time"] > 0, FINAL_STEP).astype(int)
     runs["event"] = (runs["loss_time"] > 0).astype(int)
@@ -922,6 +981,8 @@ def run_survival_from_bias(bias_runs: pd.DataFrame) -> None:
 
 
 def main() -> None:
+    # The top-level workflow is ordered so foundational exports exist before the
+    # more expensive simulation batches start writing their derived summaries.
     ensure_dirs()
     export_segment_coords()
 
@@ -937,6 +998,7 @@ def main() -> None:
     br4_joint = int(seed_df.loc[seed_df["rule"] == "BR4", "joint_success"].sum())
     br5_joint = int(seed_df.loc[seed_df["rule"] == "BR5", "joint_success"].sum())
 
+    # Final console output gives a quick human-readable digest after the long run.
     print("\nUpdated-model analysis complete.", flush=True)
     print(
         f"  BR3 joint success: {br3_joint}/{N_COMPARE} ({100.0 * br3_joint / N_COMPARE:.1f}%)",

@@ -3,6 +3,8 @@
 import numpy as np
 import importlib as _il
 
+# Import component modules dynamically so the simulation file stays focused on
+# orchestration rather than on local duplicate implementations.
 _flow = _il.import_module("haemodynamics")
 solve_for_flow = _flow.solve_for_flow
 compute_conductance = _flow.compute_conductance
@@ -42,8 +44,12 @@ def run_simulation(branch_rule, alpha=0.45, seed=None, params=None,
         params = DEFAULT_PARAMS.copy()
 
     if seed is not None:
+        # Seeding NumPy globally is sufficient because the model's stochasticity
+        # comes from NumPy draws inside the imported helper modules.
         np.random.seed(seed)
 
+    # Pull the full parameter set into local variables once so the main loop is
+    # easier to read and slightly cheaper to execute.
     Nseg = params["Nseg"]
     n0 = params["n0"]
     cell_width = params["cell_width"]
@@ -60,16 +66,23 @@ def run_simulation(branch_rule, alpha=0.45, seed=None, params=None,
 
     seg_cells = initialize_cells(Nseg, n0)
 
+    # The haemodynamic state is a deterministic function of the current segment
+    # occupancies, so we derive it immediately from the initialized cell counts.
     Ncell = np.array([seg_cells[seg]["num"] for seg in range(Nseg)], dtype=float)
     D, G, H = compute_conductance(Ncell, cell_width, mu, l_seg)
     P, Q, tau = solve_for_flow(G, Pin, Pout, H)
 
+    # BR8 is the only rule that requires temporal integration of shear stress.
     tau_ema = tau.copy() if branch_rule == 8 else None
 
     new_seg_cells = deep_copy_cells(seg_cells)
     for seg in range(Nseg):
+        # The model performs an initial polarity alignment so the recorded step-0
+        # state reflects a consistent starting field.
         realign_polarity(seg, Q, seg_cells, new_seg_cells, w1, w2, w3, w4)
 
+    # Allocate full histories up front; downstream analysis expects dense arrays
+    # indexed by simulation step.
     time_days = np.zeros(Nt + 1)
     Ncell_history = np.zeros((Nt + 1, Nseg))
     D_history = np.zeros((Nt + 1, Nseg))
@@ -81,6 +94,7 @@ def run_simulation(branch_rule, alpha=0.45, seed=None, params=None,
     bifurcation_lost = np.zeros(Nt + 1, dtype=int)
     branch_collapse = np.zeros(Nt + 1, dtype=int)
 
+    # Record the baseline state before any migration occurs.
     Ncell_history[0] = Ncell
     D_history[0] = D * 1e6
     Q_history[0] = Q
@@ -93,6 +107,8 @@ def run_simulation(branch_rule, alpha=0.45, seed=None, params=None,
     snapshot_steps = set(snapshot_steps or [])
     cell_snapshots = {} if snapshot_steps else None
     if record_probabilities:
+        # Probability history captures the BR5 branch-choice decomposition even
+        # when the current run may not ultimately lose a branch.
         prob_history.append(compute_br5_probabilities(seg_cells, tau, alpha))
     if cell_snapshots is not None and 0 in snapshot_steps:
         cell_snapshots[0] = deep_copy_cells(seg_cells)
@@ -104,12 +120,15 @@ def run_simulation(branch_rule, alpha=0.45, seed=None, params=None,
         if verbose:
             print(f"Time step {t}/{Nt}")
 
+        # Convert the model's internal step counter into physical time for export.
         time_days[t] = t * dt_hours / 24.0
 
         migrate = np.zeros(Nseg)
         new_seg_cells = deep_copy_cells(seg_cells)
 
         for seg in range(Nseg):
+            # Realignment is computed first so migration sees the newly updated
+            # polarity field for the current step.
             realign_polarity(seg, Q, seg_cells, new_seg_cells, w1, w2, w3, w4)
             cell_migration(
                 seg, seg_cells, new_seg_cells, migrate, Q, tau,
@@ -121,20 +140,27 @@ def run_simulation(branch_rule, alpha=0.45, seed=None, params=None,
             for p in new_seg_cells[seg]["polarity"]:
                 pv = np.array(p)
                 if np.linalg.norm(pv) > 0:
+                    # Migration uses zero vectors as placeholders for cells that
+                    # left a segment; those placeholders are stripped here.
                     new_polarity.append(p)
             new_seg_cells[seg]["polarity"] = new_polarity
 
         seg_cells = new_seg_cells
         for seg in range(Nseg):
+            # Refresh both the scalar occupancy view and the per-cell migration
+            # flags now that the step's transport is complete.
             Ncell[seg] = seg_cells[seg]["num"]
             seg_cells[seg]["migration"] = [0] * int(Ncell[seg])
 
+        # Recompute the haemodynamic field from the updated geometry.
         D, G, H = compute_conductance(Ncell, cell_width, mu, l_seg)
         P, Q, tau = solve_for_flow(G, Pin, Pout, H)
 
         if branch_rule == 8 and tau_ema is not None:
+            # Exponential smoothing approximates temporal sensing of shear stress.
             tau_ema = beta * tau + (1 - beta) * tau_ema
 
+        # Persist the full state for later figure generation and diagnostics.
         Ncell_history[t] = Ncell.copy()
         D_history[t] = D * 1e6
         Q_history[t] = Q
@@ -146,6 +172,7 @@ def run_simulation(branch_rule, alpha=0.45, seed=None, params=None,
         loss = check_bifurcation_loss(seg_cells)
         bifurcation_lost[t] = loss
         if loss > 0 and loss_time == 0:
+            # Store the first event time only; later losses should not overwrite it.
             loss_time = t
 
         collapse = check_branch_collapse(seg_cells)
@@ -156,8 +183,11 @@ def run_simulation(branch_rule, alpha=0.45, seed=None, params=None,
         if record_probabilities:
             prob_history.append(compute_br5_probabilities(seg_cells, tau, alpha))
         if cell_snapshots is not None and t in snapshot_steps:
+            # Deep-copy snapshots so later simulation steps cannot mutate the archive.
             cell_snapshots[t] = deep_copy_cells(seg_cells)
 
+    # The returned dictionary is intentionally analysis-friendly: arrays are
+    # dense, endpoint timings are scalar, and metadata is carried alongside both.
     results = {
         "time_days": time_days,
         "Ncell": Ncell_history,

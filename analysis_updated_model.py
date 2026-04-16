@@ -4,6 +4,8 @@ import numpy as np
 from multiprocessing import Pool, get_all_start_methods, get_context
 import importlib as _il
 
+# Import via `importlib` so this helper module can remain lightweight while
+# still sharing a single authoritative simulation implementation.
 _sim = _il.import_module("simulation_updated_model")
 run_simulation = _sim.run_simulation
 DEFAULT_PARAMS = _sim.DEFAULT_PARAMS
@@ -11,6 +13,7 @@ DEFAULT_PARAMS = _sim.DEFAULT_PARAMS
 
 def generate_seeds(n_seeds=1000, master_seed=42):
     """Generate a list of random seeds for reproducible stochastic runs."""
+    # A dedicated master RNG avoids coupling the seed list to global NumPy state.
     rng = np.random.RandomState(master_seed)
     return rng.randint(1, 10**9, size=n_seeds)
 
@@ -19,6 +22,8 @@ def wilson_ci(k, n, z=1.96):
     """Wilson score interval for a binomial proportion, returned in percent."""
     if n == 0:
         return 0.0, 0.0, 0.0
+    # Wilson intervals behave better than naive normal intervals when counts are
+    # small or when proportions approach 0 or 1.
     phat = k / n
     denom = 1 + z**2 / n
     centre = (phat + z**2 / (2 * n)) / denom
@@ -32,6 +37,8 @@ def wilson_ci(k, n, z=1.96):
 
 def _pool_factory(n_workers):
     """Create a Pool, preferring fork on macOS for numpy-heavy workloads."""
+    # `fork` is cheaper here because the workers mainly need read-mostly NumPy
+    # imports rather than a fully clean spawned interpreter state.
     if "fork" in get_all_start_methods():
         return get_context("fork").Pool(processes=n_workers)
     return Pool(processes=n_workers)
@@ -40,6 +47,8 @@ def _pool_factory(n_workers):
 def _run_single(args):
     """Worker function for parallel alpha sweep."""
     alpha, seed, params, Nt, branch_rule = args
+    # Copy the parameter dictionary per task so each run can override `Nt`
+    # without mutating shared state seen by other workers.
     p = params.copy()
     p["Nt"] = Nt
     result = run_simulation(branch_rule=branch_rule, alpha=alpha, seed=seed,
@@ -71,6 +80,8 @@ def alpha_sweep(alpha_values=None, seeds=None, params=None, Nt=36,
     n_alpha = len(alpha_values)
     n_seeds = len(seeds)
 
+    # Build the full Cartesian product explicitly so both sequential and
+    # parallel execution consume tasks in the exact same order.
     args_list = []
     for alpha in alpha_values:
         for seed in seeds:
@@ -87,12 +98,16 @@ def alpha_sweep(alpha_values=None, seeds=None, params=None, Nt=36,
         raw_results = []
         for idx, args in enumerate(args_list):
             if verbose and idx % 1000 == 0:
+                # Progress logging stays sparse because these sweeps can involve
+                # thousands of runs and frequent printing becomes expensive.
                 print(f"  Progress: {idx}/{total}")
             raw_results.append(_run_single(args))
     else:
         with _pool_factory(n_workers) as pool:
             raw_results = pool.map(_run_single, args_list)
 
+    # Reshape the flat task list back into alpha x seed matrices so later
+    # plotting code can index directly by parameter grid position.
     loss_time = np.zeros((n_alpha, n_seeds), dtype=int)
     loss_branch = np.zeros((n_alpha, n_seeds), dtype=int)
     branch_collapse_time = np.zeros((n_alpha, n_seeds), dtype=int)
@@ -103,6 +118,7 @@ def alpha_sweep(alpha_values=None, seeds=None, params=None, Nt=36,
     joint_success = np.zeros((n_alpha, n_seeds), dtype=int)
 
     for idx, res in enumerate(raw_results):
+        # Task ordering is alpha-major, seed-minor, matching the nested loop above.
         i = idx // n_seeds
         j = idx % n_seeds
         loss_time[i, j] = res["loss_time"]
@@ -118,6 +134,8 @@ def alpha_sweep(alpha_values=None, seeds=None, params=None, Nt=36,
     branch_collapse_pct = np.zeros((n_alpha, Nt + 1))
     for i in range(n_alpha):
         for t in range(1, Nt + 1):
+            # These cumulative percentages answer "how many runs have failed by
+            # or before time t?" rather than "how many fail exactly at t?".
             lost_by_t = np.sum((loss_time[i] > 0) & (loss_time[i] <= t))
             loss_pct[i, t] = 100.0 * lost_by_t / n_seeds
             collapsed_by_t = np.sum(
@@ -161,11 +179,15 @@ def run_multiple_seeds(branch_rule, n_seeds=10, alpha=0.45, params=None,
     if params is None:
         params = DEFAULT_PARAMS.copy()
     if Nt is not None:
+        # The optional override keeps the public function convenient for short
+        # exploratory traces without forcing callers to build a full param dict.
         params["Nt"] = Nt
 
     seeds = generate_seeds(n_seeds, master_seed)
     results = []
     for seed in seeds:
+        # Only BR5 exposes the branch probability decomposition that downstream
+        # figures consume, so the flag is enabled selectively.
         result = run_simulation(
             branch_rule=branch_rule, alpha=alpha, seed=int(seed), params=params,
             record_probabilities=(branch_rule == 5)

@@ -14,6 +14,9 @@ Migration process:
 
 import numpy as np
 import importlib as _il
+
+# Centralize all geometry-aware behaviour through `network_geometry` so the
+# migration code can reason in terms of named vessel regions and shared helpers.
 _net = _il.import_module("network_geometry")
 get_vessel_axis = _net.get_vessel_axis
 rotate_polarity = _net.rotate_polarity
@@ -40,6 +43,8 @@ def _migration_direction(seg, polar_vect):
     # Equivalent to: polar_component >= 0.5
     component = np.dot(polar_vect, axis)
 
+    # The explanatory block below preserves the reasoning that reconciles the
+    # MATLAB coordinate conventions with the current segment-axis convention.
     # Direction meaning depends on vessel orientation relative to flow:
     # - Feeding (up) & Distal_up (up): positive component = downstream (with flow)
     # - Proximal (right) & Distal_hor (right): positive component = downstream
@@ -89,6 +94,7 @@ def _apply_bifurcation_rule_downstream(seg, cell_vect, Q, tau, seg_cells,
       seg 5 (proximal, MATLAB seg 6) or seg 20 (distal, MATLAB seg 21)
     """
     if seg != 4:
+        # This helper is only meaningful at the divergent branch point.
         return None
 
     if branch_rule == 1:
@@ -140,6 +146,8 @@ def _apply_bifurcation_rule_downstream(seg, cell_vect, Q, tau, seg_cells,
         else:
             n_ratio = 0.5
 
+        # `P2` is the probability of choosing the distal branch; the proximal
+        # probability is its complement.
         P2 = alpha * tau_ratio + (1 - alpha) * n_ratio
 
         if np.random.rand() < P2:
@@ -230,6 +238,7 @@ def _apply_bifurcation_rule_upstream(seg, cell_vect, Q, tau, seg_cells,
     This is the PRIMARY decision point discussed in the paper.
     """
     if seg != 15:
+        # This upstream decision exists only at the convergent junction.
         return None
 
     if branch_rule == 1:
@@ -286,6 +295,7 @@ def _apply_bifurcation_rule_upstream(seg, cell_vect, Q, tau, seg_cells,
         else:
             n_ratio = 0.5
 
+        # Again, `P2` represents the distal-choice probability at this junction.
         P2 = alpha * tau_ratio + (1 - alpha) * n_ratio
 
         if np.random.rand() < P2:
@@ -386,6 +396,8 @@ def cell_migration(seg, seg_cells, new_seg_cells, migrate, Q, tau,
     for cell_idx in range(ncells):
         polar_vect = np.array(seg_cells[seg]['polarity'][cell_idx], dtype=float)
         direction = _migration_direction(seg, polar_vect)
+        # The current-step migration decision is stored alongside the cell so
+        # later logic can inspect or suppress it before transport happens.
         seg_cells[seg]['migration'][cell_idx] = direction
         if direction != 0:
             migrate[seg] += 1
@@ -420,6 +432,7 @@ def cell_migration(seg, seg_cells, new_seg_cells, migrate, Q, tau,
 
     # Step 3: Move cells
     if migrate[seg] <= 0:
+        # If every candidate move was suppressed, the segment contributes no transport this step.
         return br5_probs
 
     for cell_idx in range(ncells):
@@ -427,6 +440,7 @@ def cell_migration(seg, seg_cells, new_seg_cells, migrate, Q, tau,
 
         if direction == 1:
             # --- DOWNSTREAM movement ---
+            # Remove the cell from the source segment immediately in the target structure.
             new_seg_cells[seg]['num'] -= 1
             cell_vect = np.array(seg_cells[seg]['polarity'][cell_idx], dtype=float)
             new_seg_cells[seg]['polarity'][cell_idx] = [0.0, 0.0]  # placeholder
@@ -451,6 +465,8 @@ def cell_migration(seg, seg_cells, new_seg_cells, migrate, Q, tau,
                     target = result
 
             # Polarity rotation at direction changes
+            # Rotations are discrete because the schematic network turns only in
+            # right angles or in the periodic wrap-around.
             if seg == 4 and target == 5:
                 cell_vect = rotate_polarity(cell_vect, -90)
             elif seg == 4 and target == 20:
@@ -470,6 +486,8 @@ def cell_migration(seg, seg_cells, new_seg_cells, migrate, Q, tau,
 
         elif direction == -1:
             # --- UPSTREAM movement ---
+            # Upstream movement mirrors the same bookkeeping but uses different
+            # routing logic at the convergent junction.
             new_seg_cells[seg]['num'] -= 1
             cell_vect = np.array(seg_cells[seg]['polarity'][cell_idx], dtype=float)
             new_seg_cells[seg]['polarity'][cell_idx] = [0.0, 0.0]  # placeholder
@@ -555,6 +573,8 @@ def compute_br5_probabilities(seg_cells, tau, alpha):
     else:
         P_n1 = P_n2 = 0.5
 
+    # The final branch probabilities are convex combinations of haemodynamic
+    # evidence and local occupancy, weighted by `alpha`.
     P1 = alpha * P_tau1 + (1 - alpha) * P_n1
     P2 = alpha * P_tau2 + (1 - alpha) * P_n2
 

@@ -14,6 +14,8 @@ DATA_DIR = HERE / "data"
 
 
 def build_table_s1() -> pd.DataFrame:
+    # This is a hand-curated comparison table rather than a derived analysis:
+    # each row captures one conceptual difference between scaffold and paper model.
     rows = [
         {
             "area": "Branch-choice semantics",
@@ -62,6 +64,8 @@ def build_table_s1() -> pd.DataFrame:
 
 
 def build_asset_manifest() -> pd.DataFrame:
+    # The manifest maps each paper-facing asset to the script that creates its
+    # underlying data, which helps reviewers reproduce specific deliverables.
     rows = [
         {
             "paper_asset": "Main Figure 1",
@@ -103,14 +107,18 @@ def build_asset_manifest() -> pd.DataFrame:
 
 
 def main() -> None:
+    # Keep all exports in the shared `data/` directory used by the rest of the repo.
     DATA_DIR.mkdir(exist_ok=True)
 
     table_s1 = build_table_s1()
     manifest = build_asset_manifest()
 
+    # CSVs are the primary machine-readable outputs for assessors.
     table_s1.to_csv(DATA_DIR / "table_s1_scaffold_expansions.csv", index=False)
     manifest.to_csv(DATA_DIR / "paper_asset_manifest.csv", index=False)
 
+    # The JSON file is intentionally lightweight: it only confirms which files
+    # this script generated, making it suitable as a simple machine-readable log.
     summary = {
         "generated_files": [
             "data/table_s1_scaffold_expansions.csv",

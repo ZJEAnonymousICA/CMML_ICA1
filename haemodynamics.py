@@ -14,6 +14,8 @@ Node indexing (0-based, MATLAB is 1-based):
 
 import numpy as np
 
+# The updated model keeps the network size fixed, so the solver can assemble a
+# compact hard-coded linear system for this specific topology.
 NNODE = 40
 NSEG = 40
 
@@ -32,9 +34,12 @@ def solve_for_flow(G, Pin, Pout, H):
         Q: segment flow rates (NSEG,) in m³/s
         tau: wall shear stress (NSEG,) in Pa
     """
+    # Work on a copy so callers do not see the zero-conductance safeguard applied in place.
     G = G.copy()
     G[G == 0] = 1e-25  # prevent singular matrix
 
+    # `C @ P = B` is the nodal-pressure system assembled from flow conservation
+    # plus the inlet and outlet boundary conditions.
     C = np.zeros((NNODE, NNODE))
     B = np.zeros(NNODE)
 
@@ -52,6 +57,7 @@ def solve_for_flow(G, Pin, Pout, H):
 
     # --- Nodes 2–4: standard interior nodes on feeding vessel ---
     for node in range(2, 5):
+        # At a linear interior node, incoming and outgoing segment fluxes must balance.
         seg_in = node - 1   # segment entering this node
         seg_out = node       # segment leaving this node
         C[node, node-1] = -G[seg_in]
@@ -108,6 +114,7 @@ def solve_for_flow(G, Pin, Pout, H):
 
     # --- Nodes 22–38: interior nodes on upper path ---
     for node in range(22, 39):
+        # The upper branch uses the same linear conservation form as the lower path.
         seg_in = node - 1   # segments 21–37
         seg_out = node       # segments 22–38
         C[node, node-1] = -G[seg_in]
@@ -124,6 +131,8 @@ def solve_for_flow(G, Pin, Pout, H):
     P = np.linalg.solve(C, B)
 
     # --- Calculate flow rates ---
+    # After nodal pressures are known, each segment flow is just conductance
+    # times the pressure drop across that segment.
     Q = np.zeros(NSEG)
 
     # Lower path segments 0–19: seg i connects node i → node i+1
@@ -142,6 +151,7 @@ def solve_for_flow(G, Pin, Pout, H):
     Q[39] = -G[39] * (P[15] - P[39])
 
     # --- Calculate wall shear stress ---
+    # `H` already encodes the geometric/viscosity prefactor, so WSS is linear in flow.
     tau = H * Q
 
     return P, Q, tau
@@ -161,17 +171,23 @@ def compute_conductance(Ncell, cell_width, mu, l_seg):
         G: conductances (NSEG,) in m³/(Pa·s)
         H: shear stress coefficients (NSEG,)
     """
+    # The updated model allows true occlusion, so empty segments get zero
+    # diameter and therefore zero conductance instead of a minimum floor.
     D = np.zeros(NSEG)
     G = np.zeros(NSEG)
     H = np.zeros(NSEG)
 
     for seg in range(NSEG):
         if Ncell[seg] >= 1:
+            # Circumference is approximated as `Ncell * cell_width`, yielding
+            # diameter = circumference / pi.
             D[seg] = Ncell[seg] * cell_width / np.pi
         else:
             D[seg] = 0.0
 
         if D[seg] > 0:
+            # Standard Poiseuille relations convert diameter into conductance
+            # and the shear-stress scaling factor.
             G[seg] = np.pi * D[seg]**4 / (128 * mu * l_seg)
             H[seg] = 32 * mu / (np.pi * D[seg]**3)
         else:

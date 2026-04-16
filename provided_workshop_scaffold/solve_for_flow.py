@@ -19,6 +19,7 @@ def solve_for_flow(G, Pin, Pout, H=None):
     Nseg = 40 # Total segments
     
     # Eposilon to prevent zero conductance
+    # Without this floor the linear system becomes singular if a segment closes completely.
     G[G == 0] = 1e-25
     
     P = np.zeros(Nn)
@@ -27,6 +28,8 @@ def solve_for_flow(G, Pin, Pout, H=None):
     B = np.zeros(Nn)
 
     # Constract Linear equations C * P = B
+    # `C` stores the coefficients from flow-conservation equations, while `B`
+    # carries the contribution from fixed inlet/outlet pressures.
 
     # 1. Boundary Conditions
     # Node 0 (Inlet)
@@ -63,6 +66,8 @@ def solve_for_flow(G, Pin, Pout, H=None):
     
     # Middle nodes in upper loop (22 to 38)
     for node in range(22, 39):
+        # These nodes have the same "one segment in, one segment out" pattern
+        # as the straight parts of the lower loop.
         # In: Seg node-1 (from node-1), Out: Seg node (to node+1)
         C[node, node-1] = -G[node-1]
         C[node, node]   =  G[node-1] + G[node]
@@ -100,6 +105,7 @@ def solve_for_flow(G, Pin, Pout, H=None):
     
     # Calculate flow Q
     # Also follow the topology
+    # Once pressures are known, segment flows follow directly from pressure drops.
     
     # Lower Path (Seg 0-19)
     # Seg 0-4
@@ -130,6 +136,8 @@ def solve_for_flow(G, Pin, Pout, H=None):
     Q[39] = G[39] * (P[39] - P[15])
     
     # Compute shear stress if H is provided
+    # The scaffold occasionally calls this function without `H` when only
+    # pressures and flows are needed.
     if H is not None:
         tau = H * Q
         return P, Q, tau
